@@ -10,16 +10,26 @@ DB_FILE = "game_state.json"
 PASSWORD_TEACHER = "123456"
 
 def load_state():
+    # Cấu trúc mặc định đầy đủ các phím
+    default_state = {"sentence": "", "status": "waiting", "results": [], "question_id": 0}
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, "r") as f: return json.load(f)
-        except: pass
-    return {"sentence": "", "status": "waiting", "results": [], "question_id": 0}
+            with open(DB_FILE, "r") as f: 
+                data = json.load(f)
+                # Kiểm tra và bổ sung các key thiếu từ file cũ
+                for key, value in default_state.items():
+                    if key not in data:
+                        data[key] = value
+                return data
+        except:
+            pass
+    return default_state
 
 def save_state(state):
-    with open(DB_FILE, "w") as f: json.dump(state, f)
+    with open(DB_FILE, "w") as f: 
+        json.dump(state, f)
 
-# Khởi tạo session_state cá nhân cho từng trình duyệt
+# Khởi tạo session_state cá nhân
 if 'user_role' not in st.session_state: st.session_state.user_role = None
 if 'nickname' not in st.session_state: st.session_state.nickname = ""
 if 'placed_words' not in st.session_state: st.session_state.placed_words = []
@@ -27,46 +37,47 @@ if 'available_words' not in st.session_state: st.session_state.available_words =
 if 'last_question_id' not in st.session_state: st.session_state.last_question_id = -1
 if 'submitted' not in st.session_state: st.session_state.submitted = False
 
-# --- CSS: Giao diện Block chuyên nghiệp ---
+# --- CSS: Giao diện Block ---
 st.markdown("""
 <style>
-    .placeholder-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 30px; min-height: 80px; padding: 15px; border: 3px dashed #ccc; border-radius: 15px; background: #fafafa; }
-    .word-block { background: #FFEB3B; border: 3px solid #FBC02D; border-radius: 10px; padding: 12px 24px; font-weight: bold; font-size: 20px; cursor: pointer; box-shadow: 3px 3px 0px #ccc; }
-    .word-block:hover { background: #FFF176; transform: translateY(-2px); }
-    .rank-card { padding: 10px; border-radius: 10px; background: #e3f2fd; margin-bottom: 5px; border-left: 5px solid #2196f3; }
+    .placeholder-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 30px; min-height: 80px; padding: 20px; border: 3px dashed #bbb; border-radius: 15px; background: #fdfdfd; }
+    .word-block { background: #FFEB3B; border: 3px solid #FBC02D; border-radius: 12px; padding: 15px 25px; font-weight: bold; font-size: 24px; cursor: pointer; box-shadow: 4px 4px 0px #ddd; display: inline-block; }
+    .rank-card { padding: 12px; border-radius: 12px; background: #e3f2fd; margin-bottom: 8px; border-left: 6px solid #1976d2; font-size: 18px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- TRANG 1: CHỌN TƯ CÁCH THAM GIA ---
+# --- TRANG 1: CHỌN TƯ CÁCH ---
 if st.session_state.user_role is None:
-    st.title("🧩 English Word Game")
+    st.title("🏆 English Class Word Game")
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Student", use_container_width=True):
+        if st.button("Join as Student", use_container_width=True):
             st.session_state.temp_role = "Student"
     with col2:
-        if st.button("Teacher", use_container_width=True):
+        if st.button("Join as Teacher", use_container_width=True):
             st.session_state.temp_role = "Teacher"
 
     if 'temp_role' in st.session_state:
         if st.session_state.temp_role == "Student":
-            nick = st.text_input("Please input nickname (English characters only):").strip()
-            # Xử lý khi nhấn Enter hoặc nhấn nút Confirm
-            if (st.button("Confirm") or (nick and nick != st.session_state.nickname)) and nick:
+            nick = st.text_input("Please input nickname (English only):").strip()
+            # Xử lý nhấn Enter hoặc nút Confirm
+            if st.button("Confirm Name") or (nick and st.session_state.get('last_input') != nick):
                 if re.match("^[a-zA-Z0-9 ]+$", nick):
                     st.session_state.nickname = nick
                     st.session_state.user_role = "Student"
                     st.rerun()
-                else: st.error("Invalid nickname! No special characters or Vietnamese allowed.")
+                elif nick: 
+                    st.error("Only English letters and numbers allowed!")
         
         else:
-            pwd = st.text_input("Please input password:", type="password")
-            if st.button("Confirm Password") or (pwd == PASSWORD_TEACHER):
+            pwd = st.text_input("Please input teacher password:", type="password")
+            if st.button("Access Panel") or (pwd == PASSWORD_TEACHER):
                 if pwd == PASSWORD_TEACHER:
                     st.session_state.user_role = "Teacher"
                     st.rerun()
-                else: st.error("Wrong password!")
+                elif pwd: 
+                    st.error("Incorrect password!")
 
 # --- TRANG CHÍNH ---
 else:
@@ -74,10 +85,9 @@ else:
 
     # --- GIAO DIỆN HỌC SINH ---
     if st.session_state.user_role == "Student":
-        # 1. Kiểm tra nếu có câu hỏi mới từ giáo viên thì Reset dữ liệu cũ
+        # Tự động Reset khi giáo viên đổi câu mới (Dựa trên question_id)
         if state["question_id"] != st.session_state.last_question_id:
             st.session_state.placed_words = []
-            st.session_state.available_words = []
             st.session_state.submitted = False
             st.session_state.last_question_id = state["question_id"]
             if state["status"] == "playing":
@@ -87,95 +97,89 @@ else:
             st.rerun()
 
         if state["status"] == "waiting":
-            st.header(f"Hi {st.session_state.nickname}!")
-            st.subheader("📢 Please wait for teacher...")
+            st.header(f"Hello, {st.session_state.nickname}!")
+            st.subheader("⏳ Please wait for the teacher to start...")
             time.sleep(2)
             st.rerun()
         
         elif state["status"] == "playing":
             if st.session_state.submitted:
-                st.info("✅ Submitted! Please wait for others.")
+                st.success("✅ Submitted! Waiting for results...")
                 time.sleep(3)
                 st.rerun()
             else:
-                st.write("### Tap words to arrange:")
-                
-                # Khu vực các ô đợi (Placeholders)
+                st.write("### Arrange the sentence:")
+                # Vùng hiển thị câu đang xếp
                 st.markdown('<div class="placeholder-container">', unsafe_allow_html=True)
-                cols_p = st.columns(len(state["sentence"].split()) if state["sentence"] else 1)
                 for i, w in enumerate(st.session_state.placed_words):
-                    if st.button(w, key=f"placed_{i}", use_container_width=True):
+                    if st.button(w, key=f"p_{i}"):
                         st.session_state.available_words.append(w)
                         st.session_state.placed_words.pop(i)
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-                st.write("---")
-                # Khu vực các block từ đang xáo trộn
+                # Vùng các block từ để chọn
+                st.write("Available words:")
                 for i, w in enumerate(st.session_state.available_words):
-                    if st.button(w, key=f"avail_{i}"):
+                    if st.button(w, key=f"a_{i}"):
                         st.session_state.placed_words.append(w)
                         st.session_state.available_words.pop(i)
                         st.rerun()
 
-                if st.button("CONFIRM SUBMIT", type="primary", use_container_width=True):
-                    final_ans = " ".join(st.session_state.placed_words)
-                    state["results"].append({"name": st.session_state.nickname, "answer": final_ans, "time": time.time()})
+                if st.button("CONFIRM ANSWER", type="primary", use_container_width=True):
+                    final = " ".join(st.session_state.placed_words)
+                    state["results"].append({"name": st.session_state.nickname, "answer": final, "time": time.time()})
                     save_state(state)
                     st.session_state.submitted = True
                     st.rerun()
 
         elif state["status"] == "ended":
-            st.warning("⌛ Time's up! Waiting for the next round.")
+            st.info("⌛ Session ended. The teacher is reviewing.")
             time.sleep(3)
             st.rerun()
 
     # --- GIAO DIỆN GIÁO VIÊN ---
     elif st.session_state.user_role == "Teacher":
-        st.header("Teacher Control Panel")
+        st.header("👨‍🏫 Teacher Control Panel")
         
         if state["status"] == "waiting":
-            input_sent = st.text_area("Input a new sentence:", placeholder="Type here...")
-            if st.button("SEND TO STUDENTS") and input_sent:
-                state["sentence"] = input_sent
+            sentence = st.text_area("Input English sentence:", placeholder="e.g., I love learning English")
+            if (st.button("SEND TO CLASS") or (sentence and sentence.endswith('\n'))) and sentence:
+                state["sentence"] = sentence.strip()
                 state["status"] = "playing"
                 state["results"] = []
-                state["question_id"] += 1 # Tăng ID để máy học sinh tự Reset
+                state["question_id"] += 1 # Kích hoạt reset cho học sinh
                 save_state(state)
                 st.rerun()
         
         elif state["status"] == "playing":
-            st.subheader("实时 Leaderboard (Submitting...)")
-            # Sắp xếp theo thời gian nộp ngay lập tức
-            sorted_subs = sorted(state["results"], key=lambda x: x['time'])
+            st.subheader("⚡ Live Ranking (Submission Order)")
+            # Sắp xếp học sinh theo thời gian nộp nhanh nhất
+            ranked = sorted(state["results"], key=lambda x: x['time'])
             
-            if not sorted_subs:
-                st.write("No one has submitted yet...")
+            if not ranked:
+                st.write("Waiting for students...")
             else:
-                for i, res in enumerate(sorted_subs):
-                    st.markdown(f'<div class="rank-card">Rank {i+1}: <b>{res["name"]}</b> (Submitted)</div>', unsafe_allow_html=True)
+                for i, res in enumerate(ranked):
+                    st.markdown(f'<div class="rank-card"><b>Rank {i+1}:</b> {res["name"]} - <i>Submitted</i></div>', unsafe_allow_html=True)
             
-            if st.button("END & SHOW ALL ANSWERS", type="primary"):
+            if st.button("END & SHOW RESULTS", type="primary"):
                 state["status"] = "ended"
                 save_state(state)
                 st.rerun()
-            
-            time.sleep(2) # Tự động cập nhật Leaderboard
+            time.sleep(2)
             st.rerun()
 
         elif state["status"] == "ended":
-            st.subheader("Final Results Summary")
-            sorted_res = sorted(state["results"], key=lambda x: x['time'])
+            st.subheader("Final Class Results")
+            ranked = sorted(state["results"], key=lambda x: x['time'])
+            for i, res in enumerate(ranked):
+                st.write(f"**Rank {i+1}: {res['name']}**")
+                st.code(res['answer'])
             
-            for i, res in enumerate(sorted_res):
-                col_a, col_b = st.columns([1, 4])
-                col_a.write(f"**Rank {i+1}: {res['name']}**")
-                col_b.code(res['answer'], language="text")
-            
-            if st.button("NEXT QUESTION (Reset All)"):
+            if st.button("NEXT QUESTION (Restart Flow)"):
                 state["status"] = "waiting"
-                state["sentence"] = ""
                 state["results"] = []
-                # Không reset question_id ở đây để học sinh vẫn ở trạng thái chờ câu mới
+                # Giữ nguyên question_id cho đến khi có câu hỏi thực sự mới
                 save_state(state)
                 st.rerun()
